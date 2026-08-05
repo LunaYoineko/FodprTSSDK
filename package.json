@@ -1,0 +1,39 @@
+{
+	"name": "fodpr-ts-sdk",
+	"version": "0.1.0",
+	"description": "Fodpr リレーサーバー向け TypeScript SDK。イベント投稿(EVENT)・購読(REQ)・署名/検証・ワイヤプロトコルのエンコード/デコードを提供する。",
+	"license": "MIT",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"files": [
+		"dist"
+	],
+	"keywords": [
+		"fodpr",
+		"relay",
+		"websocket",
+		"secp256k1",
+		"sdk",
+		"decentralized"
+	],
+	"engines": {
+		"node": ">=18"
+	},
+	"scripts": {
+		"build": "tsc",
+		"typecheck": "tsc --noEmit",
+		"example": "tsx examples/basic.ts",
+		"prepublishOnly": "npm run build"
+	},
+	"dependencies": {
+		"@noble/hashes": "^2.2.0",
+		"@noble/secp256k1": "^3.1.0",
+		"ws": "^8.21.2"
+	},
+	"devDependencies": {
+		"@types/node": "^26.1.2",
+		"@types/ws": "^8.18.1",
+		"tsx": "^4.19.2",
+		"typescript": "^5.9.0"
+	}
+}

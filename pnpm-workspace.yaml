@@ -1,0 +1,7 @@
+# pnpm ワークスペースの設定
+# tsx が利用する esbuild のビルドスクリプトを許可する
+onlyBuiltDependencies:
+  - esbuild
+
+allowBuilds:
+  esbuild: true
