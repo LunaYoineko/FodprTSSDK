@@ -19,11 +19,11 @@
  *   await client.connect();
  *   client.onEvent((subId, event) => console.log(subId, event.content));
  *   client.sendEvent({ ... });
- *   client.sendReq({ subId: "sub1", kind: 1, tagKey: "", tagVal: "" });
+ *   client.sendReq({ subId: "sub1", transType: TransTypeString, tagKey: "", tagVal: "" });
  */
 
 import WebSocket from 'ws';
-import { MsgTypeEvent, MsgTypePush, FodprEvent, FodprReq, Protocol } from './protocol';
+        import { MsgTypeEvent, MsgTypePush, FodprEvent, FodprReq, Protocol } from './protocol';
 
 // クライアントの生成オプション
 export interface FodprClientOptions {
@@ -119,7 +119,7 @@ export class FodprClient {
             const subId = new TextDecoder().decode(bytes.subarray(3, 3 + subIdLen));
             // 残りのバイト列がイベント本体(encodeEvent の出力)
             const event = Protocol.decodeEvent(bytes.subarray(3 + subIdLen));
-            this.log(`[受信] PUSH Event [SubId: ${subId}] Kind: ${event.kind}`);
+            this.log(`[受信] PUSH Event [SubId: ${subId}] TransType: ${Protocol.transTypeName(event.transType)}`);
             this.eventHandler(subId, event);
         } else {
             // それ以外はテキスト応答として扱う
@@ -130,7 +130,7 @@ export class FodprClient {
     }
 
     // イベント投稿 (EVENT)
-    // サーバー側で署名検証 → 保存される。kind 1(通常投稿)や kind 0(プロフィール)に対応。
+    // サーバー側で署名検証 → 保存される。transType によって JSON / String / Binary を切り替える。
     public sendEvent(event: FodprEvent) {
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
             throw new Error("WebSocketが接続されていません");
@@ -148,7 +148,7 @@ export class FodprClient {
     }
 
     // 購読要求 (REQ)
-    // 指定した kind(とタグ条件)に一致する保存済みイベントをサーバーが PUSH で返してくる。
+    // 指定した transType(とタグ条件)に一致する保存済みイベントをサーバーが PUSH で返してくる。
     public sendReq(req: FodprReq) {
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
             throw new Error("WebSocketが接続されていません");
@@ -157,7 +157,7 @@ export class FodprClient {
         // encodeReq は先頭にメッセージ種別 REQ(0x02) を含むため、そのまま送るだけでよい
         const payload = Protocol.encodeReq(req);
         this.ws.send(Buffer.from(payload));
-        this.log(`[送信] REQ パケット送信[SubId: ${req.subId}, Kind: ${req.kind}]`);
+        this.log(`[送信] REQ パケット送信[SubId: ${req.subId}, TransType: ${Protocol.transTypeName(req.transType)}]`);
     }
 
     // 接続を閉じる

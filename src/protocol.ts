@@ -15,27 +15,39 @@
 
 // メッセージ種別を表す定数。
 // Nim 側 protocol.nim の MsgTypeEvent / MsgTypeReq / MsgTypePush と一致させること。
-export const MsgTypeEvent = 0x01; // イベント投稿
-export const MsgTypeReq = 0x02;   // 購読要求
-export const MsgTypePush = 0x81;  // イベント配信
+export const MsgTypeEvent = 0x01; // イベント投稿 (クライアント -> サーバー)
+export const MsgTypeReq = 0x02;   // 購読要求 (クライアント -> サーバー)
+export const MsgTypePush = 0x81;  // イベント配信 (サーバー -> クライアント)
+
+// 送信タイプ (TransType)。
+// イベントの `content` がどのようなデータであるかを表し、配信方法を切り替える。
+// Nim 側の TransTypeAll / TransTypeJSON / TransTypeString / TransTypeBinary と一致。
+export const TransTypeAll = 0x00;    // すべてのタイプを購読する(REQ でのみ使用)
+export const TransTypeJSON = 0x01;   // content は UTF-8 の JSON(サーバーが構文検証する)
+export const TransTypeString = 0x02; // content は UTF-8 の文字列
+export const TransTypeBinary = 0x03; // content は任意のバイト列(バイナリのまま配信)
 
 // 投稿されるイベント本体。
 export interface FodprEvent {
-    kind: number;                    // イベント種別(0 = プロフィール, 1 = 通常投稿, 2 = メディアなど)
-    createdAt: number;               // Unix タイムスタンプ(秒, uint64)
-    pubkey: Uint8Array;              // 送信者の公開鍵(圧縮形式 33 バイト)
-    tags: string[];                  // タグ文字列のリスト
-    content: string;                 // 本文(UTF-8)
-    signature: Uint8Array;           // 本文に対する ECDSA 署名(compact 形式 64 バイト)
+    transType: number;          // 送信タイプ(TransTypeJSON / String / Binary)
+    createdAt: number;          // Unix タイムスタンプ(秒, uint64)
+    pubkey: Uint8Array;         // 送信者の公開鍵(圧縮形式 33 バイト)
+    tags: string[];             // タグ文字列のリスト
+    content: string;            // 本文(タイプに応じて JSON / 文字列 / バイナリ)
+    signature: Uint8Array;      // content の SHA-256 ダイジェストに対する ECDSA 署名(64 バイト)
 }
 
 // 購読 (REQ) 要求。
-// kind が 0 の場合はすべての種別、tagKey/tagVal でタグの絞り込みも可能。
+// transType が TransTypeAll(0) の場合はすべてのタイプを購読する。
+// tagKey/tagVal でタグの絞り込みも可能。
+//   プロフィール管理はクライアント側の責務。例えば TransTypeJSON で
+//   `{"mode":"profile","name":"..."}` のように JSON を投稿すると、サーバーは
+//   content をそのまま保存し取得時も JSON として返す。クライアントが profile を判定する。
 export interface FodprReq {
-    subId: string;   // 購読を識別するための ID(サーバーはこの ID 付きで PUSH を返す)
-    kind: number;    // 購読したいイベント種別(0 = すべて)
-    tagKey: string;  // 絞り込み対象のタグキー(空文字なら無条件)
-    tagVal: string;  // 絞り込み対象のタグ値(空文字なら無条件)
+    subId: string;    // 購読を識別するための ID(サーバーはこの ID 付きで PUSH を返す)
+    transType: number; // 購読したい送信タイプ(0 = すべて)
+    tagKey: string;   // 絞り込み対象のタグキー(空文字なら無条件)
+    tagVal: string;   // 絞り込み対象のタグ値(空文字なら無条件)
 }
 
 export class Protocol {
@@ -43,7 +55,7 @@ export class Protocol {
      * イベントをバイナリにエンコードする(Nim の encodeEvent 相当)。
      *
      * レイアウト(すべてビッグエンディアン):
-     *   kind(2) | createdAt(8) | pubkey(33) | tagCount(2) |
+     *   transType(2) | createdAt(8) | pubkey(33) | tagCount(2) |
      *   (tagLen(2) | tag) * tagCount | contentLen(4) | content | signature(64)
      *
      * メッセージ種別バイト(0x01)は含めない。
@@ -64,14 +76,14 @@ export class Protocol {
 
         const contentBytes = encoder.encode(event.content);
 
-        // 全体サイズ: kind(2) + createdAt(8) + pubkey(33) + タグ部 + contentLen(4) + content + signature(64)
+        // 全体サイズ: transType(2) + createdAt(8) + pubkey(33) + タグ部 + contentLen(4) + content + signature(64)
         const totalLen = 2 + 8 + 33 + tagsBytesLen + 4 + contentBytes.length + 64;
         const buffer = new ArrayBuffer(totalLen);
         const view = new DataView(buffer);
         let offset = 0;
 
-        // kind (uint16, ビッグエンディアン)
-        view.setUint16(offset, event.kind, false);
+        // transType (uint16, ビッグエンディアン)
+        view.setUint16(offset, event.transType, false);
         offset += 2;
 
         // createdAt (uint64, ビッグエンディアン)
@@ -120,7 +132,7 @@ export class Protocol {
      * 含めた「送信するパケット全体」を返す。
      *
      * レイアウト(すべてビッグエンディアン):
-     *   MsgTypeReq(1) | subIdLen(2) | subId | kind(2) |
+     *   MsgTypeReq(1) | subIdLen(2) | subId | transType(2) |
      *   tagKeyLen(2) | tagKey | tagValLen(2) | tagVal
      */
     public static encodeReq(req: FodprReq): Uint8Array {
@@ -144,8 +156,8 @@ export class Protocol {
         new Uint8Array(buffer, offset, subIdBytes.length).set(subIdBytes);
         offset += subIdBytes.length;
 
-        // kind (uint16, ビッグエンディアン)
-        view.setUint16(offset, req.kind, false);
+        // transType (uint16, ビッグエンディアン)
+        view.setUint16(offset, req.transType, false);
         offset += 2;
 
         // tagKey(長さ uint16 + 本体)
@@ -172,8 +184,8 @@ export class Protocol {
         const decoder = new TextDecoder();
         let offset = 0;
 
-        // kind (uint16, ビッグエンディアン)
-        const kind = view.getUint16(offset, false);
+        // transType (uint16, ビッグエンディアン)
+        const transType = view.getUint16(offset, false);
         offset += 2;
 
         // createdAt (uint64, ビッグエンディアン)
@@ -204,6 +216,20 @@ export class Protocol {
         // signature(compact 形式 64 バイト)
         const signature = data.slice(offset, offset + 64);
 
-        return { kind, createdAt, pubkey, tags, content, signature };
+        return { transType, createdAt, pubkey, tags, content, signature };
+    }
+
+    /**
+     * 送信タイプ(TransType)の数値から表示用の名前を返す(ログ表示用)。
+     * Nim 側の transTypeName に相当。
+     */
+    public static transTypeName(transType: number): string {
+        switch (transType) {
+            case TransTypeAll:    return "All";
+            case TransTypeJSON:   return "JSON";
+            case TransTypeString: return "String";
+            case TransTypeBinary: return "Binary";
+            default:              return `Unknown(${transType})`;
+        }
     }
 }

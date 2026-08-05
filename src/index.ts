@@ -19,8 +19,9 @@ export { FodprClient } from './client';
 // 鍵生成・署名・署名検証ユーティリティ(CryptoUtils)
 export { CryptoUtils } from './crypto';
 
-// ワイヤプロトコルのエンコード / デコード(Protocol)とメッセージ種別定数
-export { Protocol, MsgTypeEvent, MsgTypeReq, MsgTypePush } from './protocol';
+// ワイヤプロトコルのエンコード / デコード(`Protocol`)、
+// メッセージ種別定数と送信タイプ(TransType)定数
+export { Protocol, MsgTypeEvent, MsgTypeReq, MsgTypePush, TransTypeAll, TransTypeJSON, TransTypeString, TransTypeBinary } from './protocol';
 
 // 公開型定義(FodprEvent / FodprReq)
 export type { FodprEvent, FodprReq } from './protocol';
