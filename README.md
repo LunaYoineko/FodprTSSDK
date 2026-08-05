@@ -41,7 +41,7 @@ pnpm run build    # dist/ に JavaScript + 型定義(.d.ts) を出力
 git clone https://github.com/LunaYoineko/FodprRelay
 
 # 2. リレーサーバーを起動(別ターミナルで)
-cd Fodpr
+cd FodprRelay
 docker compose up -d --build   # Docker で起動
 # またはネイティブで起動:  nimble install -d && nim c -d:release src/server.nim && ./src/server
 

@@ -40,7 +40,7 @@ pnpm run build    # outputs JavaScript + type declarations (.d.ts) to dist/
 git clone https://github.com/LunaYoineko/FodprRelay
 
 # 2. Start the relay server (in another terminal)
-cd Fodpr
+cd FodprRelay
 docker compose up -d --build   # start with Docker
 # or run natively:  nimble install -d && nim c -d:release src/server.nim && ./src/server
 
