@@ -36,11 +36,11 @@ pnpm run build    # outputs JavaScript + type declarations (.d.ts) to dist/
 `examples/basic.ts` is a runnable sample.
 
 ```bash
-# 1. Clone the Fodpr repository (skip if /root/Fodpr already exists)
-git clone https://github.com/LunaYoineko/Fodpr /root/Fodpr
+# 1. Clone the Fodpr repository
+git clone https://github.com/LunaYoineko/FodprRelay
 
 # 2. Start the relay server (in another terminal)
-cd /root/Fodpr
+cd Fodpr
 docker compose up -d --build   # start with Docker
 # or run natively:  nimble install -d && nim c -d:release src/server.nim && ./src/server
 

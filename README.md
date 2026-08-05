@@ -37,11 +37,11 @@ pnpm run build    # dist/ に JavaScript + 型定義(.d.ts) を出力
 `examples/basic.ts` がそのまま動くサンプルです。
 
 ```bash
-# 1. Fodpr のリポジトリをクローン(既に /root/Fodpr にある場合は不要)
-git clone https://github.com/LunaYoineko/Fodpr /root/Fodpr
+# 1. Fodpr のリポジトリをクローン
+git clone https://github.com/LunaYoineko/FodprRelay
 
 # 2. リレーサーバーを起動(別ターミナルで)
-cd /root/Fodpr
+cd Fodpr
 docker compose up -d --build   # Docker で起動
 # またはネイティブで起動:  nimble install -d && nim c -d:release src/server.nim && ./src/server
 
