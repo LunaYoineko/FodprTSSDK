@@ -10,14 +10,21 @@
  * パケット構造(先頭 1 バイトがメッセージ種別):
  *   - 0x01 (EVENT): イベント投稿(署名付き)
  *   - 0x02 (REQ)  : サブスクリプション(購読)要求
+ *   - 0x03 (DEL)  : イベント削除要求(署名付き)
  *   - 0x81 (PUSH) : サーバー → クライアントのイベント配信
  */
 
 // メッセージ種別を表す定数。
-// Nim 側 protocol.nim の MsgTypeEvent / MsgTypeReq / MsgTypePush と一致させること。
+// Nim 側 protocol.nim の MsgTypeEvent / MsgTypeReq / MsgTypeDel / MsgTypePush と一致させること。
 export const MsgTypeEvent = 0x01; // イベント投稿 (クライアント -> サーバー)
 export const MsgTypeReq = 0x02;   // 購読要求 (クライアント -> サーバー)
+export const MsgTypeDel = 0x03;   // イベント削除要求 (クライアント -> サーバー)
 export const MsgTypePush = 0x81;  // イベント配信 (サーバー -> クライアント)
+
+// 削除対象タイプ (DEL)。
+// Nim 側 protocol.nim の DelTargetPubkey / DelTargetEvent と一致。
+export const DelTargetPubkey = 0; // 公開鍵単位で削除(その送信者のイベントを全削除)
+export const DelTargetEvent = 1;  // 特定イベントを削除(createdAt + content ハッシュで特定)
 
 // 送信タイプ (TransType)。
 // イベントの `content` がどのようなデータであるかを表し、配信方法を切り替える。
@@ -48,6 +55,19 @@ export interface FodprReq {
     transType: number; // 購読したい送信タイプ(0 = すべて)
     tagKey: string;   // 絞り込み対象のタグキー(空文字なら無条件)
     tagVal: string;   // 絞り込み対象のタグ値(空文字なら無条件)
+}
+
+// イベント削除 (DEL) 要求。
+// 署名は「transType | targetType | pubkey(33)」を SHA-256 したダイジェストに対して
+// 行い、署名対象に createdAt / contentHash を含めるのは DelTargetEvent のときだけ
+// (Nim 側の encodeDelSignedData と同一レイアウト)。
+export interface FodprDelReq {
+    transType: number;          // 削除対象の送信タイプ(TransTypeJSON / String / Binary / All)
+    targetType: number;         // DelTargetPubkey / DelTargetEvent
+    pubkey: Uint8Array;         // 削除対象(自分の)公開鍵(圧縮形式 33 バイト)
+    createdAt: number;          // DelTargetEvent のときのみ有効(Unix タイムスタンプ秒)
+    contentHash: Uint8Array;    // DelTargetEvent のときのみ有効(content の SHA-256、32 バイト)
+    signature: Uint8Array;      // ECDSA 署名(compact 形式 64 バイト)
 }
 
 export class Protocol {
@@ -217,6 +237,72 @@ export class Protocol {
         const signature = data.slice(offset, offset + 64);
 
         return { transType, createdAt, pubkey, tags, content, signature };
+    }
+
+    /**
+     * 削除要求の署名対象バイト列を生成する(Nim の encodeDelSignedData 相当)。
+     *
+     * レイアウト(すべてビッグエンディアン):
+     *   transType(2) | targetType(1) | pubkey(33) |
+     *   [createdAt(8) | contentHash(32)]   ← DelTargetEvent のときのみ
+     *
+     * クライアント側とサーバー側で完全に一致させる必要がある。
+     */
+    public static encodeDelSignedData(req: FodprDelReq): Uint8Array {
+        const hasEvent = req.targetType === DelTargetEvent;
+        const totalLen = 2 + 1 + 33 + (hasEvent ? 8 + 32 : 0);
+        const buffer = new ArrayBuffer(totalLen);
+        const view = new DataView(buffer);
+        let offset = 0;
+
+        // transType (uint16, ビッグエンディアン)
+        view.setUint16(offset, req.transType, false);
+        offset += 2;
+
+        // targetType (1 バイト)
+        view.setUint8(offset, req.targetType);
+        offset += 1;
+
+        // pubkey(圧縮形式 33 バイト)を検証してから書き込む
+        if (req.pubkey.length !== 33) {
+            throw new Error(`Invalid pubkey length: expected 33, got ${req.pubkey.length}`);
+        }
+        new Uint8Array(buffer, offset, 33).set(req.pubkey);
+        offset += 33;
+
+        if (hasEvent) {
+            // createdAt (uint64, ビッグエンディアン)
+            view.setBigUint64(offset, BigInt(req.createdAt), false);
+            offset += 8;
+
+            // contentHash (32 バイト)
+            if (req.contentHash.length !== 32) {
+                throw new Error(`Invalid contentHash length: expected 32, got ${req.contentHash.length}`);
+            }
+            new Uint8Array(buffer, offset, 32).set(req.contentHash);
+            offset += 32;
+        }
+
+        return new Uint8Array(buffer);
+    }
+
+    /**
+     * 削除要求全体をワイヤ形式にエンコードする(Nim の encodeDel 相当)。
+     *
+     * レイアウト:
+     *   MsgTypeDel(1) | encodeDelSignedData | signature(64)
+     */
+    public static encodeDel(req: FodprDelReq): Uint8Array {
+        const signedData = Protocol.encodeDelSignedData(req);
+        if (req.signature.length !== 64) {
+            throw new Error(`Invalid signature length: expected 64, got ${req.signature.length}`);
+        }
+        const totalLen = 1 + signedData.length + 64;
+        const buffer = new Uint8Array(totalLen);
+        buffer[0] = MsgTypeDel;
+        buffer.set(signedData, 1);
+        buffer.set(req.signature, 1 + signedData.length);
+        return buffer;
     }
 
     /**
