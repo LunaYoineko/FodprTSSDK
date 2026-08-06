@@ -21,7 +21,7 @@ export { CryptoUtils } from './crypto';
 
 // ワイヤプロトコルのエンコード / デコード(`Protocol`)、
 // メッセージ種別定数と送信タイプ(TransType)定数
-export { Protocol, MsgTypeEvent, MsgTypeReq, MsgTypePush, TransTypeAll, TransTypeJSON, TransTypeString, TransTypeBinary } from './protocol';
+export { Protocol, MsgTypeEvent, MsgTypeReq, MsgTypeDel, MsgTypePush, DelTargetPubkey, DelTargetEvent, TransTypeAll, TransTypeJSON, TransTypeString, TransTypeBinary } from './protocol';
 
-// 公開型定義(FodprEvent / FodprReq)
-export type { FodprEvent, FodprReq } from './protocol';
+// 公開型定義(FodprEvent / FodprReq / FodprDelReq)
+export type { FodprEvent, FodprReq, FodprDelReq } from './protocol';
