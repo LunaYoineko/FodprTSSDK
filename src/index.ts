@@ -6,16 +6,13 @@
  * このファイル自体には処理は書かない(副作用なし)。
  *
  * 利用例:
- *   import { FodprClient, CryptoUtils, Protocol } from 'fodpr-ts-sdk';
+ *   import { CryptoUtils, Protocol } from 'fodpr-ts-sdk';
  *
  * 送受信する実データの流れ:
- *   クライアント -> サーバー: EVENT(0x01) / REQ(0x02) / DEL(0x03) / AUTH(0x04) / SIGNAL(0x05)
- *   サーバー   -> クライアント: PUSH(0x81) / CHALLENGE(0x82) / SIGNAL_PUSH(0x83)
+ *   P2P メッシュ (リレー・ホストなし):
+ *     EVENT(0x01) / SIGNAL(0x05) / DATA(0x06) / PEER_LIST(0x07/0x87) /
+ *     WOT_INTRO(0x08/0x88) / INVITATION(0x09/0x89) / DHT(0x0B/0x8B/0x8C)
  */
-
-// WebSocket クライアント(FodprClient)
-export { FodprClient } from './client';
-export type { FodprClientOptions } from './client';
 
 // 鍵生成・署名・署名検証ユーティリティ(CryptoUtils)
 export { CryptoUtils } from './crypto';
@@ -25,30 +22,25 @@ export { CryptoUtils } from './crypto';
 export {
     Protocol,
     // メッセージ種別
-    MsgTypeEvent, MsgTypeReq, MsgTypeDel, MsgTypeAuth, MsgTypeSignal,
-    MsgTypeData, MsgTypePeerListReq, MsgTypeWoTIntro,
-    MsgTypeInvitationReq, MsgTypeGroupReq,
-    MsgTypePush, MsgTypeChallenge, MsgTypeSignalPush, MsgTypeDataPush,
+    MsgTypeEvent, MsgTypeSignal, MsgTypeData, MsgTypePeerListReq,
+    MsgTypeWoTIntro, MsgTypeInvitationReq, MsgTypeDht,
     MsgTypePeerListPush, MsgTypeWoTIntroPush,
-    MsgTypeInvitationPush, MsgTypeGroupPush,
-    // 削除対象タイプ
-    DelTargetPubkey, DelTargetEvent, DelTargetEventId,
+    MsgTypeInvitationPush, MsgTypeDhtNodes, MsgTypeDhtValue,
     // 送信タイプ
-    TransTypeAll, TransTypeJSON, TransTypeString, TransTypeBinary,
-    TransTypeSigned, TransTypeEncrypted, TransTypeWebRTC,
-    TransTypeData, TransTypeF2FSignal,
-    TransTypePeerList, TransTypeWoTIntro, TransTypeInvitation, TransTypeGroup,
+    TransTypeJSON, TransTypeString, TransTypeBinary,
+    TransTypeSigned, TransTypeEncrypted, TransTypeData,
+    TransTypePeerList, TransTypeWoTIntro, TransTypeInvitation,
     // シグナリングメッセージ種別
-    SignalOffer, SignalAnswer, SignalCandidate, SignalHostChange,
-    SignalGroupJoin, SignalGroupLeave,
+    SignalOffer, SignalAnswer, SignalCandidate,
+    // DHT 操作種別
+    DhtOpPing, DhtOpPong, DhtOpFindNode, DhtOpFindValue, DhtOpStore,
 } from './protocol';
 
 // 公開型定義
 export type {
-    FodprEvent, FodprReq, FodprDelReq, FodprAuth, FodprChallenge, FodprSignal,
-    FodprData, F2FSignal,
+    FodprEvent, FodprSignal, FodprData,
     PeerInfo, PeerList,
     WoTIntro, InvitationCode,
-    GroupMember, F2FGroup, GroupJoinReq, GroupLeaveReq,
+    DhtNodeInfo, DhtMessage,
     SeedNode, SeedResponse,
 } from './protocol';
