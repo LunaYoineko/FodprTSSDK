@@ -8,11 +8,14 @@ WebSocket 経由で署名付きイベントの投稿（EVENT）と購読要求�
 ## 特徴
 
 - **イベント投稿 (EVENT)** — secp256k1 (ECDSA) で署名したイベントをリレーサーバーへ投稿
-- **購読 (REQ / PUSH)** — 送信タイプ(JSON/String/Binary)やタグで条件を指定して、保存済みイベントを受信
+- **購読 (REQ / PUSH)** — 送信タイプ(JSON/String/Binary/Signed/Encrypted/WebRTC)やタグで条件を指定して、保存済みイベントを受信
 - **鍵・署名ユーティリティ** — 秘密鍵生成 / 公開鍵導出 / 署名 / 署名検証（`CryptoUtils`）
 - **ワイヤプロトコル** — サーバー(Nim 製 `protocol.nim`)とバイト単位で互換なエンコード / デコード（`Protocol`）
 - **バイナリフレーム通信** — 公開鍵や署名など任意バイト列を正しく送受信（テキストフレームの UTF-8 文字化け問題を回避）
 - **型定義付き** — `.d.ts` を同梱し、TypeScript で型安全に利用可能
+- **F2F (Friend-to-Friend) / WoT** — 招待コード (`f2finv1...`) 生成・解析、PeerList 署名付きエンコード/デコード、ピアキャッシュ管理
+- **RtcGroup (ホスト昇格型 P2P)** — WebRTC シグナリング (`TransTypeWebRTC` + `to:<hostFpub>`) 、グループ作成・参加、ホスト昇格通知 (`HOST_CHANGE`) 処理
+- **統合ネットワーク層** — 3 モード (F2F / RtcGroup / Relay Only) を `localStorage.fodpr_network_mode` で切替可能
 
 ## 必要環境
 
@@ -116,8 +119,14 @@ client.sendReq({ subId: "sub_1", transType: TransTypeString, tagKey: "", tagVal:
 | `connect(): Promise<void>` | サーバーへ接続。接続確立で resolve される |
 | `sendEvent(event)` | 署名付きイベントを投稿（EVENT） |
 | `sendReq(req)` | 購読要求を送信（REQ） |
+| `sendSignal(signal)` | WebRTC/F2F シグナリングメッセージを送信（SIGNAL, 0x05） |
+| `sendF2FSignal(signal)` | F2F P2P シグナリングをリレー経由で送信（viaRelay=true） |
+| `sendAuth(auth)` | 認証応答を送信（AUTH, 0x04） |
+| `sendSeedRequest(maxNodes)` | シードピア取得要求を送信（テキストフレーム JSON） |
+| `sendText(text)` | プレーンテキスト（JSON 等）を送信 |
 | `onEvent(cb)` | PUSH イベント受信時のコールバック `(subId, event) => void` を登録 |
-| `onText(cb)` | テキスト応答（`OK: ...` / `ERR: ...` / `EOE: ...`）受信時のコールバックを登録 |
+| `onText(cb)` | テキスト応答（`OK: ...` / `ERR: ...` / `EOE: ...` / `HOST_CHANGE: ...`）受信時のコールバックを登録 |
+| `onF2FSignal(cb)` | F2F P2P シグナリング受信時のコールバック `(signal) => void` を登録 |
 | `close()` | 接続を閉じる |
 
 ### `CryptoUtils`
@@ -130,6 +139,8 @@ client.sendReq({ subId: "sub_1", transType: TransTypeString, tagKey: "", tagVal:
 | `signMessage(privKey, message): Promise<string>` | メッセージに対する ECDSA 署名（compact 64 バイト HEX）。SHA-256 ダイジェストに対して署名 |
 | `verifySignature(pubKey, message, sig): Promise<boolean>` | 署名の検証 |
 | `hexToBytes(hex)` / `bytesToHex(bytes)` | HEX ↔ バイト列の変換 |
+| `fsecEncode(privKey)` / `fsecDecode(fsecStr)` | fsec1... Bech32 エンコード/デコード |
+| `fpubEncode(pubKey)` / `fpubDecode(fpubStr)` | fpub1... Bech32 エンコード/デコード |
 
 ### `Protocol`
 
@@ -138,14 +149,27 @@ client.sendReq({ subId: "sub_1", transType: TransTypeString, tagKey: "", tagVal:
 | `encodeEvent(event): Uint8Array` | イベント本体をバイナリへエンコード |
 | `decodeEvent(bytes): FodprEvent` | バイナリからイベントを復元 |
 | `encodeReq(req): Uint8Array` | REQ パケット（先頭に種別バイト 0x02 を含む）をエンコード |
+| `encodeSignal(signal): Uint8Array` | FodprSignal (WebRTC) をエンコード |
+| `encodeF2FSignal(signal): Uint8Array` | F2FSignal (P2P) をエンコード |
+| `encodePeerList(peerList): Uint8Array` | PeerList (WoT キャッシュ同期) をエンコード |
+| `encodeGroup(group): Uint8Array` | F2FGroup (グループ状態) をエンコード |
+| `encodeInvitationBech32(inv): string` | 招待コード (f2finv1...) を Bech32 エンコード |
+| `decodeInvitationBech32(code): InvitationCode` | 招待コードをデコード |
 | `transTypeName(transType): string` | 送信タイプ数値から表示名を返す |
+| `encodeAuthSignedData(auth): Uint8Array` | AUTH 署名対象バイト列を作成 |
+| `encodeDelSignedData(req): Uint8Array` | DEL 署名対象バイト列を作成 |
 
 ### 型定義
 
 - `FodprEvent` — `{ transType, createdAt, pubkey, tags, content, signature }`
 - `FodprReq` — `{ subId, transType, tagKey, tagVal }`
-- 送信タイプ定数 — `TransTypeAll` (0) / `TransTypeJSON` (1) / `TransTypeString` (2) / `TransTypeBinary` (3)
-- メッセージ種別定数 — `MsgTypeEvent` (0x01) / `MsgTypeReq` (0x02) / `MsgTypePush` (0x81)
+- `FodprSignal` — `{ signalType, sender, target, content, signature }` (WebRTC)
+- `F2FSignal` — `{ signalType, sender, target, content, signature, viaRelay }` (P2P)
+- `PeerList` — `{ version, peerCount, peers: PeerInfo[], signature }` (WoT キャッシュ)
+- `F2FGroup` — `{ groupId, hostPubkey, members: GroupMember[], version, createdAt, signature }`
+- `InvitationCode` — `{ version, issuer, targetPeer, expiresAt, scope, signature }` (f2finv1...)
+- 送信タイプ定数 — `TransTypeAll` (0) / `TransTypeJSON` (1) / `TransTypeString` (2) / `TransTypeBinary` (3) / `TransTypeSigned` (4) / `TransTypeEncrypted` (5) / `TransTypeWebRTC` (6)
+- メッセージ種別定数 — `MsgTypeEvent` (0x01) / `MsgTypeReq` (0x02) / `MsgTypeDel` (0x03) / `MsgTypeAuth` (0x04) / `MsgTypeSignal` (0x05) / `MsgTypeData` (0x06) / `MsgTypePush` (0x81) / `MsgTypeChallenge` (0x82) / `MsgTypeSignalPush` (0x83) / `MsgTypeDataPush` (0x84)
 
 ## プロトコル概要
 

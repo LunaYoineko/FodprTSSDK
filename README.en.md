@@ -13,6 +13,9 @@ Post signed events (EVENT) and send subscription requests (REQ) over WebSocket, 
 - **Wire protocol** — Byte-compatible encode/decode with the server (Nim `protocol.nim`) (`Protocol`)
 - **Binary frame transport** — Arbitrary byte sequences such as public keys and signatures are transmitted correctly (avoids the UTF-8 mangling of text frames)
 - **Typed** — Ships `.d.ts`, usable in TypeScript in a type-safe manner
+- **F2F (Friend-to-Friend) / WoT** — Invitation code (`f2finv1...`) generation / parsing, signed PeerList encode/decode, peer cache management
+- **RtcGroup (Host-Promotion P2P)** — WebRTC signaling (`TransTypeWebRTC` + `to:<hostFpub>`), group create/join, host failover handling (`HOST_CHANGE`)
+- **Unified network layer** — 3 modes (F2F / RtcGroup / Relay Only) switchable via `localStorage.fodpr_network_mode`
 
 ## Requirements
 
@@ -115,8 +118,14 @@ client.sendReq({ subId: "sub_1", transType: TransTypeString, tagKey: "", tagVal:
 | `connect(): Promise<void>` | Connect to the server. Resolves once connected |
 | `sendEvent(event)` | Post a signed event (EVENT) |
 | `sendReq(req)` | Send a subscription request (REQ) |
-| `onEvent(cb)` | Register a callback `(subId, event) => void` invoked on PUSH events |
-| `onText(cb)` | Register a callback invoked on text responses (`OK: ...` / `ERR: ...` / `EOE: ...`) |
+| `sendSignal(signal)` | Send WebRTC/F2F signaling message (SIGNAL, 0x05) |
+| `sendF2FSignal(signal)` | Send F2P P2P signaling over relay (viaRelay=true) |
+| `sendAuth(auth)` | Send authentication response (AUTH, 0x04) |
+| `sendSeedRequest(maxNodes)` | Send seed peer request (text frame JSON) |
+| `sendText(text)` | Send plain text (JSON, etc.) |
+| `onEvent(cb)` | Register callback `(subId, event) => void` invoked on PUSH events |
+| `onText(cb)` | Register callback for text responses (`OK: ...` / `ERR: ...` / `EOE: ...` / `HOST_CHANGE: ...`) |
+| `onF2FSignal(cb)` | Register callback `(signal) => void` for F2F P2P signaling reception |
 | `close()` | Close the connection |
 
 ### `CryptoUtils`
@@ -129,6 +138,8 @@ client.sendReq({ subId: "sub_1", transType: TransTypeString, tagKey: "", tagVal:
 | `signMessage(privKey, message): Promise<string>` | ECDSA signature over the message (compact 64-byte HEX). Signs the SHA-256 digest |
 | `verifySignature(pubKey, message, sig): Promise<boolean>` | Verify a signature |
 | `hexToBytes(hex)` / `bytesToHex(bytes)` | HEX ↔ bytes conversion |
+| `fsecEncode(privKey)` / `fsecDecode(fsecStr)` | fsec1... Bech32 encode/decode |
+| `fpubEncode(pubKey)` / `fpubDecode(fpubStr)` | fpub1... Bech32 encode/decode |
 
 ### `Protocol`
 
@@ -137,14 +148,27 @@ client.sendReq({ subId: "sub_1", transType: TransTypeString, tagKey: "", tagVal:
 | `encodeEvent(event): Uint8Array` | Encode an event body to binary |
 | `decodeEvent(bytes): FodprEvent` | Restore an event from binary |
 | `encodeReq(req): Uint8Array` | Encode a REQ packet (includes the leading type byte 0x02) |
+| `encodeSignal(signal): Uint8Array` | Encode FodprSignal (WebRTC) |
+| `encodeF2FSignal(signal): Uint8Array` | Encode F2FSignal (P2P) |
+| `encodePeerList(peerList): Uint8Array` | Encode PeerList (WoT cache sync) |
+| `encodeGroup(group): Uint8Array` | Encode F2FGroup (group state) |
+| `encodeInvitationBech32(inv): string` | Encode invitation code (f2finv1...) to Bech32 |
+| `decodeInvitationBech32(code): InvitationCode` | Decode invitation code |
 | `transTypeName(transType): string` | Return the display name of a type value |
+| `encodeAuthSignedData(auth): Uint8Array` | Create AUTH signed data bytes |
+| `encodeDelSignedData(req): Uint8Array` | Create DEL signed data bytes |
 
 ### Types
 
 - `FodprEvent` — `{ transType, createdAt, pubkey, tags, content, signature }`
 - `FodprReq` — `{ subId, transType, tagKey, tagVal }`
-- Type constants — `TransTypeAll` (0) / `TransTypeJSON` (1) / `TransTypeString` (2) / `TransTypeBinary` (3)
-- Message type constants — `MsgTypeEvent` (0x01) / `MsgTypeReq` (0x02) / `MsgTypePush` (0x81)
+- `FodprSignal` — `{ signalType, sender, target, content, signature }` (WebRTC)
+- `F2FSignal` — `{ signalType, sender, target, content, signature, viaRelay }` (P2P)
+- `PeerList` — `{ version, peerCount, peers: PeerInfo[], signature }` (WoT cache)
+- `F2FGroup` — `{ groupId, hostPubkey, members: GroupMember[], version, createdAt, signature }`
+- `InvitationCode` — `{ version, issuer, targetPeer, expiresAt, scope, signature }` (f2finv1...)
+- Type constants — `TransTypeAll` (0) / `TransTypeJSON` (1) / `TransTypeString` (2) / `TransTypeBinary` (3) / `TransTypeSigned` (4) / `TransTypeEncrypted` (5) / `TransTypeWebRTC` (6)
+- Message type constants — `MsgTypeEvent` (0x01) / `MsgTypeReq` (0x02) / `MsgTypeDel` (0x03) / `MsgTypeAuth` (0x04) / `MsgTypeSignal` (0x05) / `MsgTypeData` (0x06) / `MsgTypePush` (0x81) / `MsgTypeChallenge` (0x82) / `MsgTypeSignalPush` (0x83) / `MsgTypeDataPush` (0x84)
 
 ## Protocol Overview
 
